@@ -99,6 +99,97 @@ else:
     print("User not found")
 ```
 
+### Listing Observation Types
+
+Discover what observation data types are available in the database. Observation types are categorized by their prefix:
+
+- **HealthKit**: Types starting with `HK` (e.g., `HKQuantityTypeIdentifierHeartRate`)
+- **MHC Custom**: Types starting with `MHC` (e.g., `MHCCustomSampleTypeDietMEPAScore`)
+- **SensorKit**: Types starting with `com.apple.SensorKit` (e.g., `com.apple.SensorKit.heart.rate`)
+
+#### List All Observation Types
+
+```python
+# Get all observation types for a specific user
+types = client.list_observation_types(user="firebase-uid-123")
+
+# Sample across multiple users (default: up to 100 users)
+all_types = client.list_observation_types()
+
+# Sample from a limited number of users
+all_types = client.list_observation_types(user_limit=50)
+```
+
+#### List by Category
+
+```python
+# HealthKit types only (HK* identifiers)
+hk_types = client.list_healthkit_observation_types(user_limit=50)
+
+# MHC custom types only (MHC* identifiers)
+mhc_types = client.list_mhc_observation_types(user_limit=50)
+
+# SensorKit types only (com.apple.SensorKit.* identifiers)
+sensor_types = client.list_sensorkit_observation_types(user_limit=50)
+```
+
+#### HealthKit Subcategories
+
+HealthKit types can be further filtered by subcategory based on their type identifier prefix:
+
+```python
+# Quantity types (HKQuantityTypeIdentifier*)
+quantity_types = client.list_hk_quantity_observation_types(user_limit=50)
+
+# Category types (HKCategoryTypeIdentifier*)
+category_types = client.list_hk_category_observation_types(user_limit=50)
+
+# Correlation types (HKCorrelationTypeIdentifier*)
+correlation_types = client.list_hk_correlation_observation_types(user_limit=50)
+
+# Workout types (HKWorkoutTypeIdentifier*)
+workout_types = client.list_hk_workout_observation_types(user_limit=50)
+
+# Clinical types (HKClinicalTypeIdentifier*)
+clinical_types = client.list_hk_clinical_observation_types(user_limit=50)
+
+# Data types (HKDataType*)
+data_types = client.list_hk_data_observation_types(user_limit=50)
+```
+
+| Subcategory | Prefix | Example |
+|-------------|--------|---------|
+| Quantity | `HKQuantityTypeIdentifier` | `HKQuantityTypeIdentifierHeartRate` |
+| Category | `HKCategoryTypeIdentifier` | `HKCategoryTypeIdentifierSleepAnalysis` |
+| Correlation | `HKCorrelationTypeIdentifier` | `HKCorrelationTypeIdentifierBloodPressure` |
+| Workout | `HKWorkoutTypeIdentifier` | `HKWorkoutTypeIdentifier` |
+| Clinical | `HKClinicalTypeIdentifier` | `HKClinicalTypeIdentifierLabResultRecord` |
+| Data | `HKDataType` | `HKDataTypeIdentifierHeartbeatSeries` |
+
+#### Parameters (all methods)
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `user` | `str \| None` | If specified, return types for this user only. If `None`, sample from multiple users. |
+| `user_limit` | `int` | Maximum number of users to sample when `user` is `None`. Default: `100`. |
+
+#### Returns
+
+All methods return `set[str]` - Set of observation type identifiers.
+
+| Method | Returns |
+|--------|---------|
+| `list_observation_types()` | All observation types |
+| `list_healthkit_observation_types()` | HealthKit types (e.g., `HKQuantityTypeIdentifierStepCount`) |
+| `list_mhc_observation_types()` | MHC custom types (e.g., `MHCCustomSampleTypeDietMEPAScore`) |
+| `list_sensorkit_observation_types()` | SensorKit types (e.g., `com.apple.SensorKit.heart.rate`) |
+| `list_hk_quantity_observation_types()` | HealthKit quantity types (e.g., `HKQuantityTypeIdentifierHeartRate`) |
+| `list_hk_category_observation_types()` | HealthKit category types (e.g., `HKCategoryTypeIdentifierSleepAnalysis`) |
+| `list_hk_correlation_observation_types()` | HealthKit correlation types (e.g., `HKCorrelationTypeIdentifierBloodPressure`) |
+| `list_hk_workout_observation_types()` | HealthKit workout types (e.g., `HKWorkoutTypeIdentifier`) |
+| `list_hk_clinical_observation_types()` | HealthKit clinical types (e.g., `HKClinicalTypeIdentifierLabResultRecord`) |
+| `list_hk_data_observation_types()` | HealthKit data types (e.g., `HKDataTypeIdentifierHeartbeatSeries`) |
+
 ## User Model
 
 The `User` dataclass represents a MyHeartCounts user profile with the following attributes:
@@ -185,4 +276,20 @@ for user in users:
     print(f"  Last active: {user.last_active_date}")
     print(f"  Language: {user.language}")
     print(f"  Group: {user.participant_group}")
+
+# Discover available observation types by category
+all_types = client.list_observation_types(user_limit=20)
+hk_types = client.list_healthkit_observation_types(user_limit=20)
+mhc_types = client.list_mhc_observation_types(user_limit=20)
+sensor_types = client.list_sensorkit_observation_types(user_limit=20)
+
+print(f"\nObservation types summary:")
+print(f"  Total: {len(all_types)}")
+print(f"  HealthKit: {len(hk_types)}")
+print(f"  MHC Custom: {len(mhc_types)}")
+print(f"  SensorKit: {len(sensor_types)}")
+
+print(f"\nHealthKit types:")
+for t in sorted(hk_types)[:5]:  # Show first 5
+    print(f"  - {t}")
 ```
