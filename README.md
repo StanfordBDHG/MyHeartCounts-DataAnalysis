@@ -6,17 +6,64 @@ Data science package focused on quality control and validation of new MHC 4.0 ap
 
 - [Data Architecture](DATA_ARCHITECTURE.md) - Comprehensive documentation of the Firebase data structure, including Firestore collections, Cloud Storage paths, and FHIR data formats
 
+## CLI Commands
+
+The package provides a command-line interface via the `mhc-ds` command.
+
+### Generate Observation Types
+
+Discovers HealthObservation types from the Firestore database and generates a Python enum with full IDE autocomplete support.
+
+```bash
+# Generate types from production database
+mhc-ds generate-types
+
+# Specify a different project
+mhc-ds generate-types --project som-rit-phi-mhc-dev
+
+# Sample more users for better coverage (default: 100)
+mhc-ds generate-types --user-limit 500
+
+# Write to a custom output path
+mhc-ds generate-types --output ./my_types.py
+```
+
+After generation, use the enum in your code:
+
+```python
+from myheartcounts_ds import DiscoveredObservationType
+
+# Full IDE autocomplete support
+step_count = DiscoveredObservationType.HK_QUANTITY_STEP_COUNT
+print(step_count.value)  # "HKQuantityTypeIdentifierStepCount"
+
+# Lookup by raw identifier
+from myheartcounts_ds.typegen import get_observation_type_by_identifier
+obs_type = get_observation_type_by_identifier("HKQuantityTypeIdentifierHeartRate")
+```
+
 ## Project Structure
 
 ```
 MyHeartCounts-DataAnalysis/
 ├── src/
 │   └── myheartcounts_ds/       # Main package (src layout)
-│       └── __init__.py
+│       ├── __init__.py
+│       ├── client.py           # MHC4Client for Firestore access
+│       ├── config.py           # Configuration management
+│       ├── constants.py        # Constants and category enums
+│       ├── models.py           # Data models (User, etc.)
+│       ├── cli.py              # Command-line interface
+│       └── typegen/            # Type generation subpackage
+│           ├── __init__.py
+│           ├── categories.py   # Category definitions
+│           ├── discovery.py    # Type discovery logic
+│           ├── codegen.py      # Enum code generator
+│           └── generated_types.py  # Generated observation types enum
 ├── tests/                      # Test directory
 │   ├── __init__.py
 │   ├── conftest.py             # Pytest fixtures
-│   └── test_placeholder.py
+│   └── test_*.py               # Test modules
 ├── notebooks/                  # Jupyter notebooks for data analysis
 ├── scripts/                    # Utility scripts
 ├── pyproject.toml              # Project configuration
