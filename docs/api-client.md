@@ -190,6 +190,113 @@ All methods return `set[str]` - Set of observation type identifiers.
 | `list_hk_clinical_observation_types()` | HealthKit clinical types (e.g., `HKClinicalTypeIdentifierLabResultRecord`) |
 | `list_hk_data_observation_types()` | HealthKit data types (e.g., `HKDataTypeIdentifierHeartbeatSeries`) |
 
+### Retrieving HealthKit Quantity Data
+
+Use `get_hk_quantity()` to retrieve HealthKit quantity observations for a specific user as a pandas DataFrame:
+
+```python
+from datetime import datetime
+from myheartcounts_ds import MHC4Client, DiscoveredObservationType
+
+client = MHC4Client()
+
+# Get all heart rate data for a user
+df = client.get_hk_quantity(
+    DiscoveredObservationType.HK_QUANTITY_HEART_RATE,
+    user_id="firebase-uid-123",
+)
+
+# Get step count data within a time range
+df = client.get_hk_quantity(
+    DiscoveredObservationType.HK_QUANTITY_STEP_COUNT,
+    user_id="firebase-uid-123",
+    start_time=datetime(2024, 1, 1),
+    end_time=datetime(2024, 2, 1),
+)
+
+print(df.head())
+```
+
+#### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `observation_type` | `DiscoveredObservationType` | Must be an `HK_QUANTITY_*` type from the enum |
+| `user_id` | `str` | Firebase Auth UID of the user |
+| `start_time` | `datetime \| None` | Filter records where `start_time >= this value` (timezone-naive) |
+| `end_time` | `datetime \| None` | Filter records where `start_time < this value` (timezone-naive) |
+
+#### Returns
+
+A `pandas.DataFrame` with 17 columns organized into logical groups:
+
+**Core Fields**
+
+| Column | Type | Source | Description |
+|--------|------|--------|-------------|
+| `sample_id` | `str` | identifier/id | Unique identifier for the sample |
+| `start_time` | `datetime64[ns]` | effectivePeriod/start | Observation start time (timezone-naive) |
+| `end_time` | `datetime64[ns]` | effectivePeriod/end | Observation end time (timezone-naive) |
+| `value` | `float64` | valueQuantity/value | The measured quantity value |
+| `unit` | `str` | valueQuantity/unit | Unit of measurement |
+
+**Source Revision Fields** (from `sourceRevision` extension)
+
+| Column | Type | Source | Description |
+|--------|------|--------|-------------|
+| `source_timezone` | `str` | sampleUploadTimeZone | Timezone of the recording device |
+| `source_name` | `str` | sourceRevision/source/name | Name of the data source (e.g., "My App") |
+| `source_bundle_id` | `str` | sourceRevision/source/bundleIdentifier | Bundle identifier of the source app |
+| `source_version` | `str` | sourceRevision/version | Version of the source app |
+| `source_product_type` | `str` | sourceRevision/productType | Product type (e.g., "Watch7,12") |
+| `source_os_version` | `str` | sourceRevision/OSVersion | OS version (e.g., "26.2.0") |
+
+**Device Fields** (from `sourceDevice` extension)
+
+| Column | Type | Source | Description |
+|--------|------|--------|-------------|
+| `device_name` | `str` | sourceDevice/name | Device name (e.g., "Apple Watch") |
+| `device_manufacturer` | `str` | sourceDevice/manufacturer | Device manufacturer (e.g., "Apple Inc.") |
+| `device_model` | `str` | sourceDevice/model | Device model (e.g., "Watch") |
+| `device_hardware_version` | `str` | sourceDevice/hardwareVersion | Hardware version (e.g., "Watch7,12") |
+| `device_software_version` | `str` | sourceDevice/softwareVersion | Software version (e.g., "26.2") |
+
+**Metadata**
+
+| Column | Type | Source | Description |
+|--------|------|--------|-------------|
+| `metadata` | `dict \| None` | metadata/* extensions | HK metadata fields as key-value pairs (e.g., `{"HKMetadataKeyHeartRateMotionContext": 1}`) |
+
+#### Available HK Quantity Types
+
+Use the `DiscoveredObservationType` enum for type-safe access to observation types:
+
+```python
+from myheartcounts_ds import DiscoveredObservationType
+
+# Examples of HK_QUANTITY_* types:
+DiscoveredObservationType.HK_QUANTITY_HEART_RATE
+DiscoveredObservationType.HK_QUANTITY_STEP_COUNT
+DiscoveredObservationType.HK_QUANTITY_ACTIVE_ENERGY_BURNED
+DiscoveredObservationType.HK_QUANTITY_WALKING_SPEED
+DiscoveredObservationType.HK_QUANTITY_VO2_MAX
+# ... and more
+```
+
+#### Error Handling
+
+```python
+import pytest
+from myheartcounts_ds import DiscoveredObservationType
+
+# Raises ValueError if observation_type is not HK_QUANTITY_*
+with pytest.raises(ValueError):
+    client.get_hk_quantity(
+        DiscoveredObservationType.HK_CATEGORY_SLEEP_ANALYSIS,  # Not a quantity type!
+        user_id="user123",
+    )
+```
+
 ## User Model
 
 The `User` dataclass represents a MyHeartCounts user profile with the following attributes:
@@ -259,7 +366,8 @@ The `User` dataclass represents a MyHeartCounts user profile with the following 
 ## Example: Complete Workflow
 
 ```python
-from myheartcounts_ds import MHC4Client, MHCConfig
+from datetime import datetime
+from myheartcounts_ds import MHC4Client, MHCConfig, DiscoveredObservationType
 
 # Connect to development environment
 config = MHCConfig.dev()
@@ -292,4 +400,31 @@ print(f"  SensorKit: {len(sensor_types)}")
 print(f"\nHealthKit types:")
 for t in sorted(hk_types)[:5]:  # Show first 5
     print(f"  - {t}")
+
+# Retrieve heart rate data for a specific user
+if users:
+    user_id = users[0].id
+    df = client.get_hk_quantity(
+        DiscoveredObservationType.HK_QUANTITY_HEART_RATE,
+        user_id=user_id,
+        start_time=datetime(2024, 1, 1),
+        end_time=datetime(2024, 12, 31),
+    )
+
+    print(f"\nHeart rate records for {user_id}: {len(df)}")
+    if not df.empty:
+        print(f"  Date range: {df['start_time'].min()} to {df['start_time'].max()}")
+        print(f"  Average HR: {df['value'].mean():.1f} {df['unit'].iloc[0]}")
+
+        # Access source and device information
+        print(f"\nSample details (first record):")
+        row = df.iloc[0]
+        print(f"  Sample ID: {row['sample_id']}")
+        print(f"  Source: {row['source_name']} ({row['source_bundle_id']})")
+        print(f"  Device: {row['device_name']} - {row['device_model']}")
+        print(f"  OS: {row['source_os_version']}")
+
+        # Access metadata if available
+        if row['metadata']:
+            print(f"  Metadata: {row['metadata']}")
 ```

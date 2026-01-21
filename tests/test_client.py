@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime
 from typing import Any
 from unittest.mock import MagicMock, patch
+
+import pandas as pd
+import pytest
 
 from myheartcounts_ds.client import MHC4Client
 from myheartcounts_ds.config import MHCConfig
 from myheartcounts_ds.models import User
+from myheartcounts_ds.typegen.generated_types import DiscoveredObservationType
 
 
 class TestMHC4ClientInit:
@@ -775,3 +780,355 @@ class TestHealthKitSubcategoryFiltering:
         for i, s1 in enumerate(subcategories):
             for s2 in subcategories[i + 1 :]:
                 assert s1 & s2 == set()
+
+
+class TestMHC4ClientGetHKQuantity:
+    """Tests for MHC4Client.get_hk_quantity() method."""
+
+    def test_returns_dataframe_with_correct_columns(
+        self,
+        mock_firestore_client: MagicMock,
+        sample_fhir_hk_quantity_doc: dict[str, Any],
+    ) -> None:
+        """get_hk_quantity returns DataFrame with expected columns."""
+        mock_doc = MagicMock()
+        mock_doc.to_dict.return_value = sample_fhir_hk_quantity_doc
+
+        mock_subcollection = MagicMock()
+        mock_subcollection.stream.return_value = [mock_doc]
+
+        mock_user_doc = MagicMock()
+        mock_user_doc.collection.return_value = mock_subcollection
+
+        mock_collection = MagicMock()
+        mock_collection.document.return_value = mock_user_doc
+        mock_firestore_client.collection.return_value = mock_collection
+
+        config = MHCConfig(project_id="test-project")
+        client = MHC4Client(config=config)
+        client._db = mock_firestore_client
+
+        df = client.get_hk_quantity(
+            DiscoveredObservationType.HK_QUANTITY_HEART_RATE,
+            user_id="user123",
+        )
+
+        expected_columns = [
+            "sample_id",
+            "start_time",
+            "end_time",
+            "value",
+            "unit",
+            "source_timezone",
+            "source_name",
+            "source_bundle_id",
+            "source_version",
+            "source_product_type",
+            "source_os_version",
+            "device_name",
+            "device_manufacturer",
+            "device_model",
+            "device_hardware_version",
+            "device_software_version",
+            "metadata",
+        ]
+        assert list(df.columns) == expected_columns
+
+    def test_returns_empty_dataframe_when_no_data(
+        self,
+        mock_firestore_client: MagicMock,
+    ) -> None:
+        """get_hk_quantity returns empty DataFrame with correct columns when no data."""
+        mock_subcollection = MagicMock()
+        mock_subcollection.stream.return_value = []
+
+        mock_user_doc = MagicMock()
+        mock_user_doc.collection.return_value = mock_subcollection
+
+        mock_collection = MagicMock()
+        mock_collection.document.return_value = mock_user_doc
+        mock_firestore_client.collection.return_value = mock_collection
+
+        config = MHCConfig(project_id="test-project")
+        client = MHC4Client(config=config)
+        client._db = mock_firestore_client
+
+        df = client.get_hk_quantity(
+            DiscoveredObservationType.HK_QUANTITY_STEP_COUNT,
+            user_id="user123",
+        )
+
+        assert len(df) == 0
+        assert "start_time" in df.columns
+        assert "value" in df.columns
+
+    def test_extracts_fhir_values_correctly(
+        self,
+        mock_firestore_client: MagicMock,
+        sample_fhir_hk_quantity_doc: dict[str, Any],
+    ) -> None:
+        """get_hk_quantity extracts FHIR values correctly."""
+        mock_doc = MagicMock()
+        mock_doc.to_dict.return_value = sample_fhir_hk_quantity_doc
+
+        mock_subcollection = MagicMock()
+        mock_subcollection.stream.return_value = [mock_doc]
+
+        mock_user_doc = MagicMock()
+        mock_user_doc.collection.return_value = mock_subcollection
+
+        mock_collection = MagicMock()
+        mock_collection.document.return_value = mock_user_doc
+        mock_firestore_client.collection.return_value = mock_collection
+
+        config = MHCConfig(project_id="test-project")
+        client = MHC4Client(config=config)
+        client._db = mock_firestore_client
+
+        df = client.get_hk_quantity(
+            DiscoveredObservationType.HK_QUANTITY_HEART_RATE,
+            user_id="user123",
+        )
+
+        assert len(df) == 1
+        row = df.iloc[0]
+
+        # Check sample ID
+        assert row["sample_id"] == "037758F0-5944-43D1-B99A-398C4B10B05B"
+
+        # Check timestamps are parsed correctly (naive, tz stripped)
+        assert row["start_time"] == pd.Timestamp("2024-01-15 10:30:00.123456")
+        assert row["end_time"] == pd.Timestamp("2024-01-15 10:30:05.987654")
+
+        # Check value and unit
+        assert row["value"] == 72.5
+        assert row["unit"] == "count/min"
+
+        # Check extracted sourceRevision fields
+        assert row["source_timezone"] == "America/Chicago"
+        assert row["source_name"] == "My App"
+        assert row["source_bundle_id"] == "com.apple.health.123"
+        assert row["source_version"] == "3068.0.7.0.1"
+        assert row["source_product_type"] == "Watch6,12"
+        assert row["source_os_version"] == "26.3.0"
+
+        # Check extracted sourceDevice fields
+        assert row["device_name"] == "Apple Watch"
+        assert row["device_manufacturer"] == "Apple Inc."
+        assert row["device_model"] == "Watch"
+        assert row["device_hardware_version"] == "Watch6,12"
+        assert row["device_software_version"] == "26.3"
+
+        # Check extracted metadata
+        assert row["metadata"] == {
+            "HKMetadataKeyHeartRateMotionContext": 1,
+            "HKMetadataKeyDevicePlacementSide": "left",
+        }
+
+    def test_filters_by_start_time(
+        self,
+        mock_firestore_client: MagicMock,
+    ) -> None:
+        """get_hk_quantity filters records by start_time."""
+        # Create docs with different timestamps
+        doc1_data = {
+            "effectivePeriod": {
+                "start": "2024-01-10T10:00:00Z",
+                "end": "2024-01-10T10:00:05Z",
+            },
+            "valueQuantity": {"value": 70, "unit": "count/min"},
+            "extension": [],
+        }
+        doc2_data = {
+            "effectivePeriod": {
+                "start": "2024-01-20T10:00:00Z",
+                "end": "2024-01-20T10:00:05Z",
+            },
+            "valueQuantity": {"value": 75, "unit": "count/min"},
+            "extension": [],
+        }
+
+        mock_doc1 = MagicMock()
+        mock_doc1.to_dict.return_value = doc1_data
+        mock_doc2 = MagicMock()
+        mock_doc2.to_dict.return_value = doc2_data
+
+        mock_subcollection = MagicMock()
+        mock_subcollection.stream.return_value = [mock_doc1, mock_doc2]
+
+        mock_user_doc = MagicMock()
+        mock_user_doc.collection.return_value = mock_subcollection
+
+        mock_collection = MagicMock()
+        mock_collection.document.return_value = mock_user_doc
+        mock_firestore_client.collection.return_value = mock_collection
+
+        config = MHCConfig(project_id="test-project")
+        client = MHC4Client(config=config)
+        client._db = mock_firestore_client
+
+        # Filter to only include records >= Jan 15
+        df = client.get_hk_quantity(
+            DiscoveredObservationType.HK_QUANTITY_HEART_RATE,
+            user_id="user123",
+            start_time=datetime(2024, 1, 15),
+        )
+
+        assert len(df) == 1
+        assert df.iloc[0]["value"] == 75
+
+    def test_filters_by_end_time(
+        self,
+        mock_firestore_client: MagicMock,
+    ) -> None:
+        """get_hk_quantity filters records by end_time."""
+        doc1_data = {
+            "effectivePeriod": {
+                "start": "2024-01-10T10:00:00Z",
+                "end": "2024-01-10T10:00:05Z",
+            },
+            "valueQuantity": {"value": 70, "unit": "count/min"},
+            "extension": [],
+        }
+        doc2_data = {
+            "effectivePeriod": {
+                "start": "2024-01-20T10:00:00Z",
+                "end": "2024-01-20T10:00:05Z",
+            },
+            "valueQuantity": {"value": 75, "unit": "count/min"},
+            "extension": [],
+        }
+
+        mock_doc1 = MagicMock()
+        mock_doc1.to_dict.return_value = doc1_data
+        mock_doc2 = MagicMock()
+        mock_doc2.to_dict.return_value = doc2_data
+
+        mock_subcollection = MagicMock()
+        mock_subcollection.stream.return_value = [mock_doc1, mock_doc2]
+
+        mock_user_doc = MagicMock()
+        mock_user_doc.collection.return_value = mock_subcollection
+
+        mock_collection = MagicMock()
+        mock_collection.document.return_value = mock_user_doc
+        mock_firestore_client.collection.return_value = mock_collection
+
+        config = MHCConfig(project_id="test-project")
+        client = MHC4Client(config=config)
+        client._db = mock_firestore_client
+
+        # Filter to only include records < Jan 15
+        df = client.get_hk_quantity(
+            DiscoveredObservationType.HK_QUANTITY_HEART_RATE,
+            user_id="user123",
+            end_time=datetime(2024, 1, 15),
+        )
+
+        assert len(df) == 1
+        assert df.iloc[0]["value"] == 70
+
+    def test_handles_missing_extension_fields_gracefully(
+        self,
+        mock_firestore_client: MagicMock,
+        sample_fhir_hk_quantity_doc_minimal: dict[str, Any],
+    ) -> None:
+        """get_hk_quantity handles missing extension fields gracefully."""
+        mock_doc = MagicMock()
+        mock_doc.to_dict.return_value = sample_fhir_hk_quantity_doc_minimal
+
+        mock_subcollection = MagicMock()
+        mock_subcollection.stream.return_value = [mock_doc]
+
+        mock_user_doc = MagicMock()
+        mock_user_doc.collection.return_value = mock_subcollection
+
+        mock_collection = MagicMock()
+        mock_collection.document.return_value = mock_user_doc
+        mock_firestore_client.collection.return_value = mock_collection
+
+        config = MHCConfig(project_id="test-project")
+        client = MHC4Client(config=config)
+        client._db = mock_firestore_client
+
+        df = client.get_hk_quantity(
+            DiscoveredObservationType.HK_QUANTITY_STEP_COUNT,
+            user_id="user123",
+        )
+
+        assert len(df) == 1
+        row = df.iloc[0]
+
+        # Values should be extracted
+        assert row["value"] == 100
+        assert row["unit"] == "count"
+
+        # Missing sample_id should be None
+        assert row["sample_id"] is None
+
+        # Missing sourceRevision fields should be None/NaN
+        assert pd.isna(row["source_timezone"]) or row["source_timezone"] is None
+        assert pd.isna(row["source_name"]) or row["source_name"] is None
+        assert pd.isna(row["source_bundle_id"]) or row["source_bundle_id"] is None
+        assert pd.isna(row["source_version"]) or row["source_version"] is None
+        assert pd.isna(row["source_product_type"]) or row["source_product_type"] is None
+        assert pd.isna(row["source_os_version"]) or row["source_os_version"] is None
+
+        # Missing sourceDevice fields should be None/NaN
+        assert pd.isna(row["device_name"]) or row["device_name"] is None
+        assert pd.isna(row["device_manufacturer"]) or row["device_manufacturer"] is None
+        assert pd.isna(row["device_model"]) or row["device_model"] is None
+        assert pd.isna(row["device_hardware_version"]) or row["device_hardware_version"] is None
+        assert pd.isna(row["device_software_version"]) or row["device_software_version"] is None
+
+        # Missing metadata should be None
+        assert row["metadata"] is None
+
+    def test_queries_correct_firestore_collection_path(
+        self,
+        mock_firestore_client: MagicMock,
+    ) -> None:
+        """get_hk_quantity queries the correct Firestore collection path."""
+        mock_subcollection = MagicMock()
+        mock_subcollection.stream.return_value = []
+
+        mock_user_doc = MagicMock()
+        mock_user_doc.collection.return_value = mock_subcollection
+
+        mock_collection = MagicMock()
+        mock_collection.document.return_value = mock_user_doc
+        mock_firestore_client.collection.return_value = mock_collection
+
+        config = MHCConfig(project_id="test-project")
+        client = MHC4Client(config=config)
+        client._db = mock_firestore_client
+
+        client.get_hk_quantity(
+            DiscoveredObservationType.HK_QUANTITY_STEP_COUNT,
+            user_id="user123",
+        )
+
+        # Verify collection path
+        mock_firestore_client.collection.assert_called_with("users")
+        mock_collection.document.assert_called_with("user123")
+        mock_user_doc.collection.assert_called_with(
+            "HealthObservations_HKQuantityTypeIdentifierStepCount"
+        )
+
+    def test_raises_error_for_non_hk_quantity_type(
+        self,
+        mock_firestore_client: MagicMock,
+    ) -> None:
+        """get_hk_quantity raises ValueError for non-HK_QUANTITY_* types."""
+        config = MHCConfig(project_id="test-project")
+        client = MHC4Client(config=config)
+        client._db = mock_firestore_client
+
+        with pytest.raises(ValueError) as exc_info:
+            client.get_hk_quantity(
+                DiscoveredObservationType.HK_CATEGORY_SLEEP_ANALYSIS,
+                user_id="user123",
+            )
+
+        assert "must be an HK_QUANTITY_* type" in str(exc_info.value)
+        assert "HK_CATEGORY_SLEEP_ANALYSIS" in str(exc_info.value)

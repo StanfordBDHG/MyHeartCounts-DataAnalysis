@@ -52,3 +52,111 @@ def minimal_user_data() -> dict[str, Any]:
 def mock_firestore_client() -> MagicMock:
     """Provide a mocked Firestore client."""
     return MagicMock()
+
+
+@pytest.fixture
+def sample_fhir_hk_quantity_doc() -> dict[str, Any]:
+    """Provide sample FHIR HK quantity observation document."""
+    return {
+        "identifier": [
+            {"id": "037758F0-5944-43D1-B99A-398C4B10B05B"},
+        ],
+        "effectivePeriod": {
+            "start": "2024-01-15T10:30:00.123456789-06:00",
+            "end": "2024-01-15T10:30:05.987654321-06:00",
+        },
+        "valueQuantity": {
+            "value": 72.5,
+            "unit": "count/min",
+        },
+        "extension": [
+            {
+                "url": "https://bdh.stanford.edu/fhir/defs/sampleUploadTimeZone",
+                "valueString": "America/Chicago",
+            },
+            {
+                "url": "https://bdh.stanford.edu/fhir/defs/sourceDevice",
+                "extension": [
+                    {
+                        "url": "https://bdh.stanford.edu/fhir/defs/sourceDevice/name",
+                        "valueString": "Apple Watch",
+                    },
+                    {
+                        "url": "https://bdh.stanford.edu/fhir/defs/sourceDevice/manufacturer",
+                        "valueString": "Apple Inc.",
+                    },
+                    {
+                        "url": "https://bdh.stanford.edu/fhir/defs/sourceDevice/model",
+                        "valueString": "Watch",
+                    },
+                    {
+                        "url": "https://bdh.stanford.edu/fhir/defs/sourceDevice/hardwareVersion",
+                        "valueString": "Watch6,12",
+                    },
+                    {
+                        "url": "https://bdh.stanford.edu/fhir/defs/sourceDevice/softwareVersion",
+                        "valueString": "26.3",
+                    },
+                ],
+            },
+            {
+                "url": "https://bdh.stanford.edu/fhir/defs/sourceRevision",
+                "extension": [
+                    {
+                        "url": "https://bdh.stanford.edu/fhir/defs/sourceRevision/source",
+                        "extension": [
+                            {
+                                "url": "https://bdh.stanford.edu/fhir/defs/sourceRevision/source/name",
+                                "valueString": "My App",
+                            },
+                            {
+                                "url": "https://bdh.stanford.edu/fhir/defs/sourceRevision/source/bundleIdentifier",
+                                "valueString": "com.apple.health.123",
+                            },
+                        ],
+                    },
+                    {
+                        "url": "https://bdh.stanford.edu/fhir/defs/sourceRevision/version",
+                        "valueString": "3068.0.7.0.1",
+                    },
+                    {
+                        "url": "https://bdh.stanford.edu/fhir/defs/sourceRevision/productType",
+                        "valueString": "Watch6,12",
+                    },
+                    {
+                        "url": "https://bdh.stanford.edu/fhir/defs/sourceRevision/OSVersion",
+                        "valueString": "26.3.0",
+                    },
+                ],
+            },
+            {
+                "url": "https://bh.stanford.edu/fhir/defs/metadata",
+                "extension": [
+                    {
+                        "url": "https://bdh.stanford.edu/fhir/defs/metadata/HKMetadataKeyHeartRateMotionContext",
+                        "valueDecimal": 1,
+                    },
+                    {
+                        "url": "https://bdh.stanford.edu/fhir/defs/metadata/HKMetadataKeyDevicePlacementSide",
+                        "valueString": "left",
+                    },
+                ],
+            },
+        ],
+    }
+
+
+@pytest.fixture
+def sample_fhir_hk_quantity_doc_minimal() -> dict[str, Any]:
+    """Provide minimal FHIR HK quantity doc with missing optional fields."""
+    return {
+        "effectivePeriod": {
+            "start": "2024-01-15T10:30:00Z",
+            "end": "2024-01-15T10:30:05Z",
+        },
+        "valueQuantity": {
+            "value": 100,
+            "unit": "count",
+        },
+        "extension": [],
+    }
