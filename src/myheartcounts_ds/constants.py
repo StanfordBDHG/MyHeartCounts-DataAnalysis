@@ -2,10 +2,10 @@
 
 from enum import Enum
 
-HEALTHKIT_COLLECTION_PREFIX = "HealthObservations_"
+HEALTH_OBSERVATION_COLLECTION_PREFIX = "HealthObservations_"
 
 
-class ObservationType(Enum):
+class HealthObservationsType(Enum):
     """Categories of observation types."""
 
     # Top-level categories

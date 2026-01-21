@@ -8,7 +8,10 @@ from typing import Any
 from google.cloud import firestore_v1 as firestore
 
 from myheartcounts_ds.config import MHCConfig
-from myheartcounts_ds.constants import HEALTHKIT_COLLECTION_PREFIX, ObservationType
+from myheartcounts_ds.constants import (
+    HEALTH_OBSERVATION_COLLECTION_PREFIX,
+    HealthObservationsType,
+)
 from myheartcounts_ds.models import User
 
 
@@ -90,7 +93,7 @@ class MHC4Client:
     def _get_user_observation_types(
         self,
         user_id: str,
-        category: ObservationType = ObservationType.ALL,
+        category: HealthObservationsType = HealthObservationsType.ALL,
     ) -> set[str]:
         """Get observation types for a single user, optionally filtered by category.
 
@@ -105,17 +108,19 @@ class MHC4Client:
         types: set[str] = set()
 
         for collection in user_doc_ref.collections():
-            if collection.id.startswith(HEALTHKIT_COLLECTION_PREFIX):
-                type_id = collection.id[len(HEALTHKIT_COLLECTION_PREFIX) :]
+            if collection.id.startswith(HEALTH_OBSERVATION_COLLECTION_PREFIX):
+                type_id = collection.id[len(HEALTH_OBSERVATION_COLLECTION_PREFIX) :]
                 # Filter by category if specified
-                if category == ObservationType.ALL or type_id.startswith(category.value):
+                if category == HealthObservationsType.ALL or type_id.startswith(
+                    category.value
+                ):
                     types.add(type_id)
 
         return types
 
     def _list_observation_types_by_category(
         self,
-        category: ObservationType,
+        category: HealthObservationsType,
         user: str | None = None,
         user_limit: int = 100,
     ) -> set[str]:
@@ -163,7 +168,9 @@ class MHC4Client:
         Returns:
             Set of all observation type identifiers.
         """
-        return self._list_observation_types_by_category(ObservationType.ALL, user, user_limit)
+        return self._list_observation_types_by_category(
+            HealthObservationsType.ALL, user, user_limit
+        )
 
     def list_healthkit_observation_types(
         self,
@@ -180,7 +187,9 @@ class MHC4Client:
         Returns:
             Set of HealthKit type identifiers (e.g., 'HKQuantityTypeIdentifierStepCount').
         """
-        return self._list_observation_types_by_category(ObservationType.HEALTHKIT, user, user_limit)
+        return self._list_observation_types_by_category(
+            HealthObservationsType.HEALTHKIT, user, user_limit
+        )
 
     def list_mhc_observation_types(
         self,
@@ -197,7 +206,9 @@ class MHC4Client:
         Returns:
             Set of MHC custom type identifiers (e.g., 'MHCCustomSampleTypeDietMEPAScore').
         """
-        return self._list_observation_types_by_category(ObservationType.MHC_CUSTOM, user, user_limit)
+        return self._list_observation_types_by_category(
+            HealthObservationsType.MHC_CUSTOM, user, user_limit
+        )
 
     def list_sensorkit_observation_types(
         self,
@@ -214,7 +225,9 @@ class MHC4Client:
         Returns:
             Set of SensorKit type identifiers (e.g., 'com.apple.SensorKit.heart.rate').
         """
-        return self._list_observation_types_by_category(ObservationType.SENSORKIT, user, user_limit)
+        return self._list_observation_types_by_category(
+            HealthObservationsType.SENSORKIT, user, user_limit
+        )
 
     # HealthKit subcategory methods
 
@@ -233,7 +246,9 @@ class MHC4Client:
         Returns:
             Set of HealthKit quantity type identifiers (e.g., 'HKQuantityTypeIdentifierHeartRate').
         """
-        return self._list_observation_types_by_category(ObservationType.HK_QUANTITY, user, user_limit)
+        return self._list_observation_types_by_category(
+            HealthObservationsType.HK_QUANTITY, user, user_limit
+        )
 
     def list_hk_category_observation_types(
         self,
@@ -250,7 +265,9 @@ class MHC4Client:
         Returns:
             Set of HealthKit category type identifiers (e.g., 'HKCategoryTypeIdentifierSleepAnalysis').
         """
-        return self._list_observation_types_by_category(ObservationType.HK_CATEGORY, user, user_limit)
+        return self._list_observation_types_by_category(
+            HealthObservationsType.HK_CATEGORY, user, user_limit
+        )
 
     def list_hk_correlation_observation_types(
         self,
@@ -267,7 +284,9 @@ class MHC4Client:
         Returns:
             Set of HealthKit correlation type identifiers (e.g., 'HKCorrelationTypeIdentifierBloodPressure').
         """
-        return self._list_observation_types_by_category(ObservationType.HK_CORRELATION, user, user_limit)
+        return self._list_observation_types_by_category(
+            HealthObservationsType.HK_CORRELATION, user, user_limit
+        )
 
     def list_hk_workout_observation_types(
         self,
@@ -284,7 +303,9 @@ class MHC4Client:
         Returns:
             Set of HealthKit workout type identifiers (e.g., 'HKWorkoutTypeIdentifier').
         """
-        return self._list_observation_types_by_category(ObservationType.HK_WORKOUT, user, user_limit)
+        return self._list_observation_types_by_category(
+            HealthObservationsType.HK_WORKOUT, user, user_limit
+        )
 
     def list_hk_clinical_observation_types(
         self,
@@ -301,7 +322,9 @@ class MHC4Client:
         Returns:
             Set of HealthKit clinical type identifiers (e.g., 'HKClinicalTypeIdentifierLabResultRecord').
         """
-        return self._list_observation_types_by_category(ObservationType.HK_CLINICAL, user, user_limit)
+        return self._list_observation_types_by_category(
+            HealthObservationsType.HK_CLINICAL, user, user_limit
+        )
 
     def list_hk_data_observation_types(
         self,
@@ -318,4 +341,6 @@ class MHC4Client:
         Returns:
             Set of HealthKit data type identifiers (e.g., 'HKDataTypeIdentifierHeartbeatSeries').
         """
-        return self._list_observation_types_by_category(ObservationType.HK_DATA, user, user_limit)
+        return self._list_observation_types_by_category(
+            HealthObservationsType.HK_DATA, user, user_limit
+        )
