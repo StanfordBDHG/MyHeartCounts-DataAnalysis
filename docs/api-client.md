@@ -297,6 +297,135 @@ with pytest.raises(ValueError):
     )
 ```
 
+### Retrieving Historical HealthKit Quantity Data
+
+Use `get_historic_hk_quantity()` to retrieve historical HealthKit quantity observations stored in Google Cloud Storage. Historical data is stored as zstd-compressed JSON files at:
+```
+{storage_bucket}/users/{user_id}/historicalHealthSamples/{HK_identifier}_{UUID}.json.zstd
+```
+
+Multiple files may exist per HK type (different UUIDs) - all are fetched and merged.
+
+```python
+from datetime import datetime
+from myheartcounts_ds import MHC4Client, DiscoveredObservationType
+
+client = MHC4Client()
+
+# Get all historical heart rate data for a user
+df = client.get_historic_hk_quantity(
+    DiscoveredObservationType.HK_QUANTITY_HEART_RATE,
+    user_id="firebase-uid-123",
+)
+
+# Get historical step count data within a time range
+df = client.get_historic_hk_quantity(
+    DiscoveredObservationType.HK_QUANTITY_STEP_COUNT,
+    user_id="firebase-uid-123",
+    start_time=datetime(2024, 1, 1),
+    end_time=datetime(2024, 2, 1),
+)
+
+print(df.head())
+```
+
+#### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `observation_type` | `DiscoveredObservationType` | Must be an `HK_QUANTITY_*` type from the enum |
+| `user_id` | `str` | Firebase Auth UID of the user |
+| `start_time` | `datetime \| None` | Filter records where `start_time >= this value` (timezone-naive) |
+| `end_time` | `datetime \| None` | Filter records where `start_time < this value` (timezone-naive) |
+
+#### Returns
+
+Returns a `pandas.DataFrame` with the same 17 columns as `get_hk_quantity()`.
+
+#### Error Handling
+
+| Scenario | Behavior |
+|----------|----------|
+| No files exist | Returns empty DataFrame with correct schema |
+| File download/parse fails | Skips file, continues with others (logs warning) |
+| Invalid observation_type | Raises `ValueError` |
+| Records contain `source_timezone` | Logs warning (historic data should not have timezone info) |
+
+```python
+import pytest
+from myheartcounts_ds import DiscoveredObservationType
+
+# Raises ValueError if observation_type is not HK_QUANTITY_*
+with pytest.raises(ValueError):
+    client.get_historic_hk_quantity(
+        DiscoveredObservationType.HK_CATEGORY_SLEEP_ANALYSIS,  # Not a quantity type!
+        user_id="user123",
+    )
+```
+
+#### Timezone Note
+
+Historic data is **not expected to contain timezone information**. If any records have a non-null `source_timezone` value, a warning is logged:
+
+```
+WARNING - Historic data contains N records with source_timezone set. Historic data is not expected to have timezone information.
+```
+
+This indicates a potential data quality issue that should be investigated.
+
+### Listing Historic Observation Types
+
+Use `list_historic_observation_types()` and `list_historic_hk_quantity_observation_types()` to discover what observation types are available in a user's historical GCS data.
+
+**Note:** Unlike the Firestore listing methods, these methods only support single-user queries. Sampling across users in GCS would require listing all user directories which is expensive.
+
+```python
+from myheartcounts_ds import MHC4Client
+
+client = MHC4Client()
+
+# List all historic observation types for a user
+all_types = client.list_historic_observation_types(user_id="firebase-uid-123")
+print(f"Found {len(all_types)} historic observation types")
+
+# List only HK quantity types
+quantity_types = client.list_historic_hk_quantity_observation_types(user_id="firebase-uid-123")
+print(f"Found {len(quantity_types)} historic HK quantity types")
+
+for t in sorted(quantity_types):
+    print(f"  - {t}")
+```
+
+#### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `user_id` | `str` | Firebase Auth UID of the user |
+
+#### Returns
+
+| Method | Returns |
+|--------|---------|
+| `list_historic_observation_types()` | Set of all observation type identifiers in GCS |
+| `list_historic_hk_quantity_observation_types()` | Set of HK quantity type identifiers in GCS (e.g., `HKQuantityTypeIdentifierHeartRate`) |
+
+#### GCS Path Structure
+
+Historic data is stored in GCS at:
+```
+{storage_bucket}/users/{user_id}/historicalHealthSamples/{HK_identifier}_{UUID}.json.zstd
+```
+
+The listing methods extract unique type identifiers from the blob filenames.
+
+#### Error Handling
+
+| Scenario | Behavior |
+|----------|----------|
+| No files exist | Returns empty set |
+| Blob name doesn't match expected pattern | Skips blob, logs warning |
+| GCS access error | Propagates exception |
+
 ## User Model
 
 The `User` dataclass represents a MyHeartCounts user profile with the following attributes:

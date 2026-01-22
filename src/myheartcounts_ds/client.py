@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import random
 import re
 from datetime import datetime
 from typing import Any
 
 import pandas as pd
+import zstandard
 from google.cloud import firestore_v1 as firestore
+from google.cloud import storage
+
+logger = logging.getLogger(__name__)
 
 from myheartcounts_ds.config import MHCConfig
 from myheartcounts_ds.constants import (
@@ -265,6 +271,7 @@ class MHC4Client:
         """
         self._config = config or MHCConfig.from_env()
         self._db: firestore.Client | None = None
+        self._storage: storage.Client | None = None
 
     @property
     def config(self) -> MHCConfig:
@@ -277,6 +284,30 @@ class MHC4Client:
         if self._db is None:
             self._db = firestore.Client(project=self._config.project_id)
         return self._db
+
+    @property
+    def gcs(self) -> storage.Client:
+        """Return the GCS storage client, creating it if necessary."""
+        if self._storage is None:
+            self._storage = storage.Client(project=self._config.project_id)
+        return self._storage
+
+    def _download_and_decompress_json(self, blob: storage.Blob) -> list[dict]:
+        """Download a zstd-compressed JSON blob and return parsed content.
+
+        Args:
+            blob: GCS blob containing zstd-compressed JSON data.
+
+        Returns:
+            List of dictionaries parsed from the JSON array.
+
+        Raises:
+            Exception: If download, decompression, or JSON parsing fails.
+        """
+        compressed_data = blob.download_as_bytes()
+        dctx = zstandard.ZstdDecompressor()
+        decompressed_data = dctx.decompress(compressed_data)
+        return json.loads(decompressed_data)
 
     def list_users(self, limit: int | None = None) -> list[User]:
         """List all users in the database.
@@ -573,6 +604,45 @@ class MHC4Client:
             HealthObservationsType.HK_DATA, user, user_limit
         )
 
+    def _create_hk_quantity_dataframe(self, records: list[dict]) -> pd.DataFrame:
+        """Create a typed DataFrame from parsed HK quantity records.
+
+        Args:
+            records: List of dictionaries from _parse_hk_quantity_record().
+
+        Returns:
+            DataFrame with proper column types and 17 columns.
+        """
+        df = pd.DataFrame(
+            records,
+            columns=[
+                "sample_id",
+                "start_time",
+                "end_time",
+                "value",
+                "unit",
+                "source_timezone",
+                "source_name",
+                "source_bundle_id",
+                "source_version",
+                "source_product_type",
+                "source_os_version",
+                "device_name",
+                "device_manufacturer",
+                "device_model",
+                "device_hardware_version",
+                "device_software_version",
+                "metadata",
+            ],
+        )
+
+        # Convert types
+        df["start_time"] = pd.to_datetime(df["start_time"])
+        df["end_time"] = pd.to_datetime(df["end_time"])
+        df["value"] = pd.to_numeric(df["value"], errors="coerce")
+
+        return df
+
     def get_hk_quantity(
         self,
         observation_type: DiscoveredObservationType,
@@ -656,33 +726,219 @@ class MHC4Client:
 
             records.append(parsed)
 
-        # Create DataFrame with proper column types
-        df = pd.DataFrame(
-            records,
-            columns=[
-                "sample_id",
-                "start_time",
-                "end_time",
-                "value",
-                "unit",
-                "source_timezone",
-                "source_name",
-                "source_bundle_id",
-                "source_version",
-                "source_product_type",
-                "source_os_version",
-                "device_name",
-                "device_manufacturer",
-                "device_model",
-                "device_hardware_version",
-                "device_software_version",
-                "metadata",
-            ],
-        )
+        return self._create_hk_quantity_dataframe(records)
 
-        # Convert types
-        df["start_time"] = pd.to_datetime(df["start_time"])
-        df["end_time"] = pd.to_datetime(df["end_time"])
-        df["value"] = pd.to_numeric(df["value"], errors="coerce")
+    def get_historic_hk_quantity(
+        self,
+        observation_type: DiscoveredObservationType,
+        user_id: str,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+    ) -> pd.DataFrame:
+        """Get historical HealthKit quantity observations from GCS.
+
+        Retrieves HK quantity records from zstd-compressed JSON files in
+        Google Cloud Storage and returns them as a typed pandas DataFrame.
+        Historical data is stored at:
+        {storage_bucket}/users/{user_id}/historicalHealthSamples/{HK_identifier}_{UUID}.json.zstd
+
+        Multiple files may exist per HK type (different UUIDs) - all are fetched and merged.
+
+        Args:
+            observation_type: The HK quantity type to retrieve. Must be a
+                DiscoveredObservationType member with name starting with "HK_QUANTITY_".
+            user_id: The Firebase Auth UID of the user.
+            start_time: If provided, only return records where start_time >= this value.
+                Must be timezone-naive for comparison with database timestamps.
+            end_time: If provided, only return records where start_time < this value.
+                Must be timezone-naive for comparison with database timestamps.
+
+        Returns:
+            DataFrame with columns identical to get_hk_quantity():
+                - sample_id: str - unique identifier for the sample (from identifier/id)
+                - start_time: datetime64[ns] - observation start time (naive)
+                - end_time: datetime64[ns] - observation end time (naive)
+                - value: float64 - the measured quantity value
+                - unit: str - unit of measurement
+                - source_timezone: str - timezone of the recording device
+                - source_name: str - name of the data source (e.g., app name)
+                - source_bundle_id: str - bundle identifier of the source app
+                - source_version: str - version of the source app
+                - source_product_type: str - product type from sourceRevision
+                - source_os_version: str - OS version from sourceRevision
+                - device_name: str - device name from sourceDevice
+                - device_manufacturer: str - device manufacturer
+                - device_model: str - device model identifier
+                - device_hardware_version: str - hardware version from sourceDevice
+                - device_software_version: str - software version from sourceDevice
+                - metadata: dict | None - HK metadata fields as key-value pairs
+
+        Raises:
+            ValueError: If observation_type is not an HK_QUANTITY_* type.
+
+        Example:
+            >>> from myheartcounts_ds import MHC4Client, DiscoveredObservationType
+            >>> client = MHC4Client()
+            >>> df = client.get_historic_hk_quantity(
+            ...     DiscoveredObservationType.HK_QUANTITY_HEART_RATE,
+            ...     user_id="abc123",
+            ...     start_time=datetime(2024, 1, 1),
+            ...     end_time=datetime(2024, 2, 1),
+            ... )
+        """
+        # Validate that observation_type is an HK quantity type
+        if not observation_type.name.startswith("HK_QUANTITY_"):
+            raise ValueError(
+                f"observation_type must be an HK_QUANTITY_* type, got {observation_type.name}"
+            )
+
+        # Build GCS prefix path
+        # Files are stored as: users/{user_id}/historicalHealthSamples/{type}_{uuid}.json.zstd
+        prefix = f"users/{user_id}/historicalHealthSamples/{observation_type.value}_"
+
+        # Get bucket and list blobs with the prefix
+        bucket = self.gcs.bucket(self._config.storage_bucket)
+        blobs = list(bucket.list_blobs(prefix=prefix))
+
+        # Return empty DataFrame if no files exist
+        if not blobs:
+            return self._create_hk_quantity_dataframe([])
+
+        # Fetch and parse all files
+        records: list[dict] = []
+        for blob in blobs:
+            try:
+                raw_records = self._download_and_decompress_json(blob)
+                for raw_record in raw_records:
+                    parsed = _parse_hk_quantity_record(raw_record)
+
+                    # Apply time filtering
+                    record_start = parsed.get("start_time")
+                    if start_time is not None and record_start is not None:
+                        if record_start < start_time:
+                            continue
+                    if end_time is not None and record_start is not None:
+                        if record_start >= end_time:
+                            continue
+
+                    records.append(parsed)
+            except Exception as e:
+                # Skip file on error, continue with others
+                logger.warning(f"Failed to process blob {blob.name}: {e}")
+                continue
+
+        df = self._create_hk_quantity_dataframe(records)
+
+        # Historic data should not have timezone information
+        if not df.empty:
+            tz_count = df["source_timezone"].notna().sum()
+            if tz_count > 0:
+                logger.warning(
+                    f"Historic data contains {tz_count} records with source_timezone set. "
+                    "Historic data is not expected to have timezone information."
+                )
 
         return df
+
+    def _extract_type_from_historic_blob_name(self, blob_name: str) -> str | None:
+        """Extract HK type identifier from historic blob name.
+
+        Blob names follow pattern:
+        users/{user_id}/historicalHealthSamples/{type}_{uuid}.json.zstd
+
+        Args:
+            blob_name: Full GCS blob path.
+
+        Returns:
+            The type identifier (e.g., 'HKQuantityTypeIdentifierHeartRate'),
+            or None if the pattern doesn't match.
+        """
+        # Extract filename from full path
+        filename = blob_name.split("/")[-1]
+
+        # Remove .json.zstd suffix
+        if not filename.endswith(".json.zstd"):
+            return None
+        base = filename.removesuffix(".json.zstd")
+
+        # Split on last underscore to separate type from UUID
+        # Use rsplit to handle types that might contain underscores
+        parts = base.rsplit("_", 1)
+        if len(parts) != 2:
+            return None
+
+        return parts[0]
+
+    def list_historic_hk_quantity_observation_types(
+        self,
+        user_id: str,
+    ) -> set[str]:
+        """List available historic HK quantity types for a user in GCS.
+
+        Queries Google Cloud Storage to find what HK quantity observation
+        types are available in the user's historical health samples.
+
+        Note: Unlike the Firestore listing methods, this only supports
+        single-user queries. Sampling across users in GCS would require
+        listing all user directories which is expensive.
+
+        Args:
+            user_id: The Firebase Auth UID of the user.
+
+        Returns:
+            Set of HK quantity type identifiers found in GCS
+            (e.g., 'HKQuantityTypeIdentifierHeartRate').
+        """
+        # Build prefix to filter to only HK quantity types
+        prefix = f"users/{user_id}/historicalHealthSamples/HKQuantityTypeIdentifier"
+
+        # Get bucket and list blobs with the prefix
+        bucket = self.gcs.bucket(self._config.storage_bucket)
+        blobs = bucket.list_blobs(prefix=prefix)
+
+        types: set[str] = set()
+        for blob in blobs:
+            type_id = self._extract_type_from_historic_blob_name(blob.name)
+            if type_id is not None:
+                types.add(type_id)
+            else:
+                logger.warning(f"Could not extract type from blob name: {blob.name}")
+
+        return types
+
+    def list_historic_observation_types(
+        self,
+        user_id: str,
+    ) -> set[str]:
+        """List all available historic observation types for a user in GCS.
+
+        Queries Google Cloud Storage to find all observation types
+        available in the user's historical health samples.
+
+        Note: Unlike the Firestore listing methods, this only supports
+        single-user queries. Sampling across users in GCS would require
+        listing all user directories which is expensive.
+
+        Args:
+            user_id: The Firebase Auth UID of the user.
+
+        Returns:
+            Set of all observation type identifiers found in GCS
+            (e.g., 'HKQuantityTypeIdentifierHeartRate', 'HKCategoryTypeIdentifierSleepAnalysis').
+        """
+        # Build prefix to list all historic samples
+        prefix = f"users/{user_id}/historicalHealthSamples/"
+
+        # Get bucket and list blobs with the prefix
+        bucket = self.gcs.bucket(self._config.storage_bucket)
+        blobs = bucket.list_blobs(prefix=prefix)
+
+        types: set[str] = set()
+        for blob in blobs:
+            type_id = self._extract_type_from_historic_blob_name(blob.name)
+            if type_id is not None:
+                types.add(type_id)
+            else:
+                logger.warning(f"Could not extract type from blob name: {blob.name}")
+
+        return types

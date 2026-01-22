@@ -160,3 +160,39 @@ def sample_fhir_hk_quantity_doc_minimal() -> dict[str, Any]:
         },
         "extension": [],
     }
+
+
+@pytest.fixture
+def mock_storage_client() -> MagicMock:
+    """Provide a mocked GCS storage client."""
+    return MagicMock()
+
+
+@pytest.fixture
+def sample_historic_hk_records() -> list[dict[str, Any]]:
+    """Provide sample historic HK records as would be found in GCS JSON files."""
+    return [
+        {
+            "identifier": [{"id": "historic-sample-1"}],
+            "effectivePeriod": {
+                "start": "2024-01-10T08:00:00Z",
+                "end": "2024-01-10T08:00:05Z",
+            },
+            "valueQuantity": {"value": 65.0, "unit": "count/min"},
+            "extension": [
+                {
+                    "url": "https://bdh.stanford.edu/fhir/defs/sampleUploadTimeZone",
+                    "valueString": "America/New_York",
+                },
+            ],
+        },
+        {
+            "identifier": [{"id": "historic-sample-2"}],
+            "effectivePeriod": {
+                "start": "2024-01-10T09:00:00Z",
+                "end": "2024-01-10T09:00:05Z",
+            },
+            "valueQuantity": {"value": 72.0, "unit": "count/min"},
+            "extension": [],
+        },
+    ]
