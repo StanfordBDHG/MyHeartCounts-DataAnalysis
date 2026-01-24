@@ -1,0 +1,559 @@
+# MyHeartCounts Data Client
+
+The `myheartcounts_ds` package provides a Python client for accessing MyHeartCounts Firebase/Firestore data.
+
+## Installation
+
+The package is installed as part of the project dependencies:
+
+```bash
+uv sync
+```
+
+## Authentication
+
+The client uses Google Cloud Application Default Credentials (ADC). Before using the client, authenticate with:
+
+```bash
+gcloud auth application-default login
+```
+
+## Configuration
+
+### MHCConfig
+
+Configuration is managed through the `MHCConfig` dataclass:
+
+```python
+from myheartcounts_ds import MHCConfig
+
+# Create config for development environment
+config = MHCConfig.dev()
+
+# Create config for production environment
+config = MHCConfig.prod()
+
+# Create config from environment variables
+config = MHCConfig.from_env()
+
+# Create custom config
+config = MHCConfig(
+    project_id="my-project-id",
+    storage_bucket="my-bucket"  # Optional, defaults to {project_id}.firebasestorage.app
+)
+```
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MHC_PROJECT_ID` | Google Cloud project ID | `som-rit-phi-mhc-prod` (for `from_env()`) |
+| `MHC_STORAGE_BUCKET` | GCS bucket for file storage | `{project_id}.firebasestorage.app` |
+
+### Default Project IDs
+
+- **Development:** `som-rit-phi-mhc-dev`
+- **Production:** `som-rit-phi-mhc-prod`
+
+## Client Usage
+
+### Initialization
+
+```python
+from myheartcounts_ds import MHC4Client, MHCConfig
+
+# Use default config (from environment, defaults to production)
+client = MHC4Client()
+
+# Use specific environment
+client = MHC4Client(config=MHCConfig.dev())
+
+# Use custom config
+client = MHC4Client(config=MHCConfig(project_id="my-project"))
+```
+
+### Listing Users
+
+```python
+# List all users
+users = client.list_users()
+
+# List with a limit
+users = client.list_users(limit=100)
+
+for user in users:
+    print(f"{user.id}: enrolled {user.date_of_enrollment}")
+```
+
+### Getting a Specific User
+
+```python
+# Get user by ID
+user = client.get_user("firebase-uid-123")
+
+if user:
+    print(f"Found user: {user.id}")
+    print(f"Language: {user.language}")
+    print(f"Time zone: {user.time_zone}")
+else:
+    print("User not found")
+```
+
+### Listing Observation Types
+
+Discover what observation data types are available in the database. Observation types are categorized by their prefix:
+
+- **HealthKit**: Types starting with `HK` (e.g., `HKQuantityTypeIdentifierHeartRate`)
+- **MHC Custom**: Types starting with `MHC` (e.g., `MHCCustomSampleTypeDietMEPAScore`)
+- **SensorKit**: Types starting with `com.apple.SensorKit` (e.g., `com.apple.SensorKit.heart.rate`)
+
+#### List All Observation Types
+
+```python
+# Get all observation types for a specific user
+types = client.list_observation_types(user="firebase-uid-123")
+
+# Sample across multiple users (default: up to 100 users)
+all_types = client.list_observation_types()
+
+# Sample from a limited number of users
+all_types = client.list_observation_types(user_limit=50)
+```
+
+#### List by Category
+
+```python
+# HealthKit types only (HK* identifiers)
+hk_types = client.list_healthkit_observation_types(user_limit=50)
+
+# MHC custom types only (MHC* identifiers)
+mhc_types = client.list_mhc_observation_types(user_limit=50)
+
+# SensorKit types only (com.apple.SensorKit.* identifiers)
+sensor_types = client.list_sensorkit_observation_types(user_limit=50)
+```
+
+#### HealthKit Subcategories
+
+HealthKit types can be further filtered by subcategory based on their type identifier prefix:
+
+```python
+# Quantity types (HKQuantityTypeIdentifier*)
+quantity_types = client.list_hk_quantity_observation_types(user_limit=50)
+
+# Category types (HKCategoryTypeIdentifier*)
+category_types = client.list_hk_category_observation_types(user_limit=50)
+
+# Correlation types (HKCorrelationTypeIdentifier*)
+correlation_types = client.list_hk_correlation_observation_types(user_limit=50)
+
+# Workout types (HKWorkoutTypeIdentifier*)
+workout_types = client.list_hk_workout_observation_types(user_limit=50)
+
+# Clinical types (HKClinicalTypeIdentifier*)
+clinical_types = client.list_hk_clinical_observation_types(user_limit=50)
+
+# Data types (HKDataType*)
+data_types = client.list_hk_data_observation_types(user_limit=50)
+```
+
+| Subcategory | Prefix | Example |
+|-------------|--------|---------|
+| Quantity | `HKQuantityTypeIdentifier` | `HKQuantityTypeIdentifierHeartRate` |
+| Category | `HKCategoryTypeIdentifier` | `HKCategoryTypeIdentifierSleepAnalysis` |
+| Correlation | `HKCorrelationTypeIdentifier` | `HKCorrelationTypeIdentifierBloodPressure` |
+| Workout | `HKWorkoutTypeIdentifier` | `HKWorkoutTypeIdentifier` |
+| Clinical | `HKClinicalTypeIdentifier` | `HKClinicalTypeIdentifierLabResultRecord` |
+| Data | `HKDataType` | `HKDataTypeIdentifierHeartbeatSeries` |
+
+#### Parameters (all methods)
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `user` | `str \| None` | If specified, return types for this user only. If `None`, sample from multiple users. |
+| `user_limit` | `int` | Maximum number of users to sample when `user` is `None`. Default: `100`. |
+
+#### Returns
+
+All methods return `set[str]` - Set of observation type identifiers.
+
+| Method | Returns |
+|--------|---------|
+| `list_observation_types()` | All observation types |
+| `list_healthkit_observation_types()` | HealthKit types (e.g., `HKQuantityTypeIdentifierStepCount`) |
+| `list_mhc_observation_types()` | MHC custom types (e.g., `MHCCustomSampleTypeDietMEPAScore`) |
+| `list_sensorkit_observation_types()` | SensorKit types (e.g., `com.apple.SensorKit.heart.rate`) |
+| `list_hk_quantity_observation_types()` | HealthKit quantity types (e.g., `HKQuantityTypeIdentifierHeartRate`) |
+| `list_hk_category_observation_types()` | HealthKit category types (e.g., `HKCategoryTypeIdentifierSleepAnalysis`) |
+| `list_hk_correlation_observation_types()` | HealthKit correlation types (e.g., `HKCorrelationTypeIdentifierBloodPressure`) |
+| `list_hk_workout_observation_types()` | HealthKit workout types (e.g., `HKWorkoutTypeIdentifier`) |
+| `list_hk_clinical_observation_types()` | HealthKit clinical types (e.g., `HKClinicalTypeIdentifierLabResultRecord`) |
+| `list_hk_data_observation_types()` | HealthKit data types (e.g., `HKDataTypeIdentifierHeartbeatSeries`) |
+
+### Retrieving HealthKit Quantity Data
+
+Use `get_hk_quantity()` to retrieve HealthKit quantity observations for a specific user as a pandas DataFrame:
+
+```python
+from datetime import datetime
+from myheartcounts_ds import MHC4Client, DiscoveredObservationType
+
+client = MHC4Client()
+
+# Get all heart rate data for a user
+df = client.get_hk_quantity(
+    DiscoveredObservationType.HK_QUANTITY_HEART_RATE,
+    user_id="firebase-uid-123",
+)
+
+# Get step count data within a time range
+df = client.get_hk_quantity(
+    DiscoveredObservationType.HK_QUANTITY_STEP_COUNT,
+    user_id="firebase-uid-123",
+    start_time=datetime(2024, 1, 1),
+    end_time=datetime(2024, 2, 1),
+)
+
+print(df.head())
+```
+
+#### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `observation_type` | `DiscoveredObservationType` | Must be an `HK_QUANTITY_*` type from the enum |
+| `user_id` | `str` | Firebase Auth UID of the user |
+| `start_time` | `datetime \| None` | Filter records where `start_time >= this value` (timezone-naive) |
+| `end_time` | `datetime \| None` | Filter records where `start_time < this value` (timezone-naive) |
+
+#### Returns
+
+A `pandas.DataFrame` with 17 columns organized into logical groups:
+
+**Core Fields**
+
+| Column | Type | Source | Description |
+|--------|------|--------|-------------|
+| `sample_id` | `str` | identifier/id | Unique identifier for the sample |
+| `start_time` | `datetime64[ns]` | effectivePeriod/start | Observation start time (timezone-naive) |
+| `end_time` | `datetime64[ns]` | effectivePeriod/end | Observation end time (timezone-naive) |
+| `value` | `float64` | valueQuantity/value | The measured quantity value |
+| `unit` | `str` | valueQuantity/unit | Unit of measurement |
+
+**Source Revision Fields** (from `sourceRevision` extension)
+
+| Column | Type | Source | Description |
+|--------|------|--------|-------------|
+| `source_timezone` | `str` | sampleUploadTimeZone | Timezone of the recording device |
+| `source_name` | `str` | sourceRevision/source/name | Name of the data source (e.g., "My App") |
+| `source_bundle_id` | `str` | sourceRevision/source/bundleIdentifier | Bundle identifier of the source app |
+| `source_version` | `str` | sourceRevision/version | Version of the source app |
+| `source_product_type` | `str` | sourceRevision/productType | Product type (e.g., "Watch7,12") |
+| `source_os_version` | `str` | sourceRevision/OSVersion | OS version (e.g., "26.2.0") |
+
+**Device Fields** (from `sourceDevice` extension)
+
+| Column | Type | Source | Description |
+|--------|------|--------|-------------|
+| `device_name` | `str` | sourceDevice/name | Device name (e.g., "Apple Watch") |
+| `device_manufacturer` | `str` | sourceDevice/manufacturer | Device manufacturer (e.g., "Apple Inc.") |
+| `device_model` | `str` | sourceDevice/model | Device model (e.g., "Watch") |
+| `device_hardware_version` | `str` | sourceDevice/hardwareVersion | Hardware version (e.g., "Watch7,12") |
+| `device_software_version` | `str` | sourceDevice/softwareVersion | Software version (e.g., "26.2") |
+
+**Metadata**
+
+| Column | Type | Source | Description |
+|--------|------|--------|-------------|
+| `metadata` | `dict \| None` | metadata/* extensions | HK metadata fields as key-value pairs (e.g., `{"HKMetadataKeyHeartRateMotionContext": 1}`) |
+
+#### Available HK Quantity Types
+
+Use the `DiscoveredObservationType` enum for type-safe access to observation types:
+
+```python
+from myheartcounts_ds import DiscoveredObservationType
+
+# Examples of HK_QUANTITY_* types:
+DiscoveredObservationType.HK_QUANTITY_HEART_RATE
+DiscoveredObservationType.HK_QUANTITY_STEP_COUNT
+DiscoveredObservationType.HK_QUANTITY_ACTIVE_ENERGY_BURNED
+DiscoveredObservationType.HK_QUANTITY_WALKING_SPEED
+DiscoveredObservationType.HK_QUANTITY_VO2_MAX
+# ... and more
+```
+
+#### Error Handling
+
+```python
+import pytest
+from myheartcounts_ds import DiscoveredObservationType
+
+# Raises ValueError if observation_type is not HK_QUANTITY_*
+with pytest.raises(ValueError):
+    client.get_hk_quantity(
+        DiscoveredObservationType.HK_CATEGORY_SLEEP_ANALYSIS,  # Not a quantity type!
+        user_id="user123",
+    )
+```
+
+### Retrieving Historical HealthKit Quantity Data
+
+Use `get_historic_hk_quantity()` to retrieve historical HealthKit quantity observations stored in Google Cloud Storage. Historical data is stored as zstd-compressed JSON files at:
+```
+{storage_bucket}/users/{user_id}/historicalHealthSamples/{HK_identifier}_{UUID}.json.zstd
+```
+
+Multiple files may exist per HK type (different UUIDs) - all are fetched and merged.
+
+```python
+from datetime import datetime
+from myheartcounts_ds import MHC4Client, DiscoveredObservationType
+
+client = MHC4Client()
+
+# Get all historical heart rate data for a user
+df = client.get_historic_hk_quantity(
+    DiscoveredObservationType.HK_QUANTITY_HEART_RATE,
+    user_id="firebase-uid-123",
+)
+
+# Get historical step count data within a time range
+df = client.get_historic_hk_quantity(
+    DiscoveredObservationType.HK_QUANTITY_STEP_COUNT,
+    user_id="firebase-uid-123",
+    start_time=datetime(2024, 1, 1),
+    end_time=datetime(2024, 2, 1),
+)
+
+print(df.head())
+```
+
+#### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `observation_type` | `DiscoveredObservationType` | Must be an `HK_QUANTITY_*` type from the enum |
+| `user_id` | `str` | Firebase Auth UID of the user |
+| `start_time` | `datetime \| None` | Filter records where `start_time >= this value` (timezone-naive) |
+| `end_time` | `datetime \| None` | Filter records where `start_time < this value` (timezone-naive) |
+
+#### Returns
+
+Returns a `pandas.DataFrame` with the same 17 columns as `get_hk_quantity()`.
+
+#### Error Handling
+
+| Scenario | Behavior |
+|----------|----------|
+| No files exist | Returns empty DataFrame with correct schema |
+| File download/parse fails | Skips file, continues with others (logs warning) |
+| Invalid observation_type | Raises `ValueError` |
+| Records contain `source_timezone` | Logs warning (historic data should not have timezone info) |
+
+```python
+import pytest
+from myheartcounts_ds import DiscoveredObservationType
+
+# Raises ValueError if observation_type is not HK_QUANTITY_*
+with pytest.raises(ValueError):
+    client.get_historic_hk_quantity(
+        DiscoveredObservationType.HK_CATEGORY_SLEEP_ANALYSIS,  # Not a quantity type!
+        user_id="user123",
+    )
+```
+
+#### Timezone Note
+
+Historic data is **not expected to contain timezone information**. If any records have a non-null `source_timezone` value, a warning is logged:
+
+```
+WARNING - Historic data contains N records with source_timezone set. Historic data is not expected to have timezone information.
+```
+
+This indicates a potential data quality issue that should be investigated.
+
+### Listing Historic Observation Types
+
+Use `list_historic_observation_types()` and `list_historic_hk_quantity_observation_types()` to discover what observation types are available in a user's historical GCS data.
+
+**Note:** Unlike the Firestore listing methods, these methods only support single-user queries. Sampling across users in GCS would require listing all user directories which is expensive.
+
+```python
+from myheartcounts_ds import MHC4Client
+
+client = MHC4Client()
+
+# List all historic observation types for a user
+all_types = client.list_historic_observation_types(user_id="firebase-uid-123")
+print(f"Found {len(all_types)} historic observation types")
+
+# List only HK quantity types
+quantity_types = client.list_historic_hk_quantity_observation_types(user_id="firebase-uid-123")
+print(f"Found {len(quantity_types)} historic HK quantity types")
+
+for t in sorted(quantity_types):
+    print(f"  - {t}")
+```
+
+#### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `user_id` | `str` | Firebase Auth UID of the user |
+
+#### Returns
+
+| Method | Returns |
+|--------|---------|
+| `list_historic_observation_types()` | Set of all observation type identifiers in GCS |
+| `list_historic_hk_quantity_observation_types()` | Set of HK quantity type identifiers in GCS (e.g., `HKQuantityTypeIdentifierHeartRate`) |
+
+#### GCS Path Structure
+
+Historic data is stored in GCS at:
+```
+{storage_bucket}/users/{user_id}/historicalHealthSamples/{HK_identifier}_{UUID}.json.zstd
+```
+
+The listing methods extract unique type identifiers from the blob filenames.
+
+#### Error Handling
+
+| Scenario | Behavior |
+|----------|----------|
+| No files exist | Returns empty set |
+| Blob name doesn't match expected pattern | Skips blob, logs warning |
+| GCS access error | Propagates exception |
+
+## User Model
+
+The `User` dataclass represents a MyHeartCounts user profile with the following attributes:
+
+### Identity
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `id` | `str` | Firebase Auth UID (document ID) |
+| `disabled` | `bool` | Whether the account is disabled |
+
+### Dates
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `date_of_birth` | `datetime \| None` | User's date of birth |
+| `date_of_enrollment` | `datetime \| None` | When user enrolled in study |
+| `last_active_date` | `datetime \| None` | Last activity timestamp |
+
+### Preferences
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `language` | `str \| None` | Preferred language code |
+| `time_zone` | `str \| None` | IANA timezone identifier |
+| `participant_group` | `int \| None` | Study group assignment |
+
+### Demographics
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `biological_sex_at_birth` | `int \| None` | Coded biological sex |
+| `blood_type` | `int \| None` | Coded blood type |
+| `height_in_cm` | `float \| None` | Height in centimeters |
+| `weight_in_kg` | `float \| None` | Weight in kilograms |
+| `us_region` | `str \| None` | US state/region code |
+| `education_us` | `str \| None` | Education level |
+| `household_income_us` | `int \| None` | Coded household income |
+| `race_ethnicity` | `int \| None` | Coded race/ethnicity |
+| `latino_status` | `int \| None` | Coded Latino/Hispanic status |
+| `mhc_gender_identity` | `int \| None` | Coded gender identity |
+
+### Health & Study
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `comorbidities` | `dict \| None` | Dictionary of comorbidity data |
+| `stage_of_change` | `str \| None` | Current stage of change |
+| `did_opt_in_to_trial` | `bool \| None` | Whether user opted into trial |
+| `future_studies` | `bool \| None` | Consent to future studies |
+
+### Consent
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `last_signed_consent_date` | `datetime \| None` | When consent was last signed |
+| `last_signed_consent_version` | `str \| None` | Version of consent signed |
+| `most_recent_onboarding_step` | `str \| None` | Last completed onboarding step |
+
+### Notifications
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `preferred_notification_time` | `str \| None` | Preferred notification time |
+| `preferred_workout_types` | `str \| None` | Preferred workout types |
+
+## Example: Complete Workflow
+
+```python
+from datetime import datetime
+from myheartcounts_ds import MHC4Client, MHCConfig, DiscoveredObservationType
+
+# Connect to development environment
+config = MHCConfig.dev()
+client = MHC4Client(config=config)
+
+# Get a sample of users
+users = client.list_users(limit=10)
+
+print(f"Found {len(users)} users")
+
+for user in users:
+    print(f"\nUser: {user.id}")
+    print(f"  Enrolled: {user.date_of_enrollment}")
+    print(f"  Last active: {user.last_active_date}")
+    print(f"  Language: {user.language}")
+    print(f"  Group: {user.participant_group}")
+
+# Discover available observation types by category
+all_types = client.list_observation_types(user_limit=20)
+hk_types = client.list_healthkit_observation_types(user_limit=20)
+mhc_types = client.list_mhc_observation_types(user_limit=20)
+sensor_types = client.list_sensorkit_observation_types(user_limit=20)
+
+print(f"\nObservation types summary:")
+print(f"  Total: {len(all_types)}")
+print(f"  HealthKit: {len(hk_types)}")
+print(f"  MHC Custom: {len(mhc_types)}")
+print(f"  SensorKit: {len(sensor_types)}")
+
+print(f"\nHealthKit types:")
+for t in sorted(hk_types)[:5]:  # Show first 5
+    print(f"  - {t}")
+
+# Retrieve heart rate data for a specific user
+if users:
+    user_id = users[0].id
+    df = client.get_hk_quantity(
+        DiscoveredObservationType.HK_QUANTITY_HEART_RATE,
+        user_id=user_id,
+        start_time=datetime(2024, 1, 1),
+        end_time=datetime(2024, 12, 31),
+    )
+
+    print(f"\nHeart rate records for {user_id}: {len(df)}")
+    if not df.empty:
+        print(f"  Date range: {df['start_time'].min()} to {df['start_time'].max()}")
+        print(f"  Average HR: {df['value'].mean():.1f} {df['unit'].iloc[0]}")
+
+        # Access source and device information
+        print(f"\nSample details (first record):")
+        row = df.iloc[0]
+        print(f"  Sample ID: {row['sample_id']}")
+        print(f"  Source: {row['source_name']} ({row['source_bundle_id']})")
+        print(f"  Device: {row['device_name']} - {row['device_model']}")
+        print(f"  OS: {row['source_os_version']}")
+
+        # Access metadata if available
+        if row['metadata']:
+            print(f"  Metadata: {row['metadata']}")
+```
