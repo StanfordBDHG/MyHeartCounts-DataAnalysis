@@ -1,0 +1,4 @@
+pandas
+firebase-admin
+pandas-gbq
+google-cloud-firestore
