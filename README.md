@@ -139,7 +139,7 @@ project_id: myheart-counts-development
 
 `gcloud scheduler jobs create http firestore-search-for-new-variables \
   --schedule="0 5 * * 0" \
-  --uri="https://us-central1-my-project.cloudfunctions.net/firestore-search-for-new-variables" \
+  --uri="https://us-central1-myheart-counts-development.cloudfunctions.net/firestore-search-for-new-variables" \
   --http-method=POST \
   --oidc-service-account-email="scheduler-etl@myheart-counts-development.iam.gserviceaccount.com" \
   --location=us-central1`
@@ -155,13 +155,13 @@ project_id: myheart-counts-development
   --memory=512MB \
   --cpu=1`
 
-`gcloud functions add-invoker-policy-binding firestore-search-for-new-variables \
+`gcloud functions add-invoker-policy-binding firestore-to-BQ-parser \
   --region=us-central1 \
   --member="serviceAccount:scheduler-etl@myheart-counts-development.iam.gserviceaccount.com"`
 
   `gcloud scheduler jobs create http firestore-to-BQ-parser \
   --schedule="0 5 * * *" \
-  --uri="https://us-central1-my-project.cloudfunctions.net/firestore-to-BQ-parser" \
+  --uri="https://us-central1-myheart-counts-development.cloudfunctions.net/firestore-to-BQ-parser" \
   --http-method=POST \
   --oidc-service-account-email="scheduler-etl@myheart-counts-development.iam.gserviceaccount.com" \
   --location=us-central1`

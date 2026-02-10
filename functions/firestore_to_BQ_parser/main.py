@@ -40,7 +40,7 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 local_flag = True
 
-def main():
+def main(request=None):
     if local_flag:
         creds = "/home/juan/Desktop/Juan/code/.creds/creds-myheart-counts-development.json"
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = creds
@@ -138,6 +138,7 @@ def main():
         logger.info("No new observations found - nothing to sync")
     
     logger.info("\n✅ Sync completed successfully")
+    return "Success", 200
 
 if __name__ == "__main__":
     main()

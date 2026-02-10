@@ -32,7 +32,7 @@ class FirestoreStreamer:
             firebase_admin.initialize_app(cred)
     
 
-def main():
+def main(request=None):
     if local_flag:
         creds = "/home/juan/Desktop/Juan/code/.creds/creds-myheart-counts-development.json"
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = creds
@@ -51,6 +51,8 @@ def main():
     healthobservation_cols = np.unique(healthobservation_cols).tolist()
     streamer.db.collection("variables").document("healthobservation_cols").set({"cols": healthobservation_cols})
     logger.info(f"Identified {len(healthobservation_cols)} unique health observation columns: {healthobservation_cols}")
+    
+    return "Success", 200
 
 if __name__ == "__main__":
     main()
