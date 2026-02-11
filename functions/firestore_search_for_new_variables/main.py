@@ -3,7 +3,11 @@ import logging
 import numpy as np
 import firebase_admin
 from firebase_admin import credentials, firestore
+from google.cloud import firestore_admin_v1
 
+project_id = "	myheart-counts-development"
+database_id = "(default)"
+    
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 local_flag = False
@@ -31,6 +35,47 @@ class FirestoreStreamer:
                 
             firebase_admin.initialize_app(cred)
     
+def update_indexes(collection,field_path = "issued"):
+    client = firestore_admin_v1.FirestoreAdminClient()
+    
+    parent = f"projects/{project_id}/databases/{database_id}/collectionGroups/{collection}/fields/{field_path}"
+    
+    # 3. Deploy via API call (This replaces 'firebase deploy')
+    field_config = firestore_admin_v1.Field(
+        name=parent,
+        index_config={
+            "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "arrayConfig": "CONTAINS",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        },
+        {
+          "arrayConfig": "CONTAINS",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ], # Empty list creates an exemption
+            "uses_ancestor_config": False
+        }
+    )
+    
+    operation = client.update_field(field=field_config)
+    return f"Update started: {operation.operation.name}"
 
 def main(request=None):
     if local_flag:
@@ -38,6 +83,9 @@ def main(request=None):
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = creds
 
     streamer = FirestoreStreamer(logger)
+
+    # health observation columns from database
+    preexisting_healthobs_cols = streamer.db.collection("variables").document("healthobservation_cols").get()
     
     # check for users first
     healthobservation_cols = []
@@ -45,12 +93,18 @@ def main(request=None):
     for user_doc in user_col.stream():
         user_id = user_doc.id
         for col in user_col.document(user_id).collections():
-            if col.id.startswith("HealthObservations"):
+            if col.id.startswith("HealthObservations") and col not in preexisting_healthobs_cols:
                 healthobservation_cols.append(col.id)
+                # add to the index
+                try:
+                    update_indexes(col.id,field_path = "issued")
+                except Exception as e: 
+                    print(e)
+
     # deduplicate column names
     healthobservation_cols = np.unique(healthobservation_cols).tolist()
-    streamer.db.collection("variables").document("healthobservation_cols").set({"cols": healthobservation_cols})
-    logger.info(f"Identified {len(healthobservation_cols)} unique health observation columns: {healthobservation_cols}")
+    streamer.db.collection("variables").document("healthobservation_cols").set({"cols": healthobservation_cols + preexisting_healthobs_cols})
+    logger.info(f"Identified {len(healthobservation_cols)} new unique health observation columns: {healthobservation_cols}")
     
     return "Success", 200
 

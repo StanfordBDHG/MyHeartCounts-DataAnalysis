@@ -38,7 +38,7 @@ from datetime import datetime
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
-local_flag = True
+local_flag = False
 
 def main(request=None):
     if local_flag:

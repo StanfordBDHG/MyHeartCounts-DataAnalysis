@@ -1,0 +1,5 @@
+altair
+scikit-learn
+numpy
+pandas
+pandas-gbq
