@@ -166,3 +166,7 @@ project_id: myheart-counts-development
   --oidc-service-account-email="scheduler-etl@myheart-counts-development.iam.gserviceaccount.com" \
   --location=us-central1`
 
+
+## Firestore indexes
+To enable quick searches we need to define index overrides or exemptions. This can be done via the console or programmatically 
+`firebase deploy --only firestore:indexes` 
