@@ -127,10 +127,11 @@ project_id: myheart-counts-development
   --runtime=python312 \
   --region=us-central1 \
   --source=. \
-  --entry-point=main\
-  --trigger-http\
+  --entry-point=main \
+  --trigger-http \
   --memory=256MB \
-  --cpu=0.5`
+  --cpu=0.5 \
+  --service-account="firebase-local@myheart-counts-development.iam.gserviceaccount.com"`
 
 ### schedulling
 `gcloud functions add-invoker-policy-binding firestore-search-for-new-variables \
@@ -153,7 +154,8 @@ project_id: myheart-counts-development
   --source=. \
   --trigger-http \
   --memory=512MB \
-  --cpu=1`
+  --cpu=1\
+  --service-account="firebase-local@myheart-counts-development.iam.gserviceaccount.com"`
 
 `gcloud functions add-invoker-policy-binding firestore-to-BQ-parser \
   --region=us-central1 \

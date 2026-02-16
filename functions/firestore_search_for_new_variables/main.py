@@ -5,7 +5,7 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 from google.cloud import firestore_admin_v1
 
-project_id = "	myheart-counts-development"
+project_id = "myheart-counts-development"
 database_id = "(default)"
     
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
